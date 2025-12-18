@@ -19,6 +19,7 @@ POSTER_BASE_URL = "https://image.tmdb.org/t/p/w500/"
 @st.cache_data
 def load_movies():
     movies = pd.DataFrame(pickle.load(open("movies_dic.pkl", "rb")))
+    movies = movies.head(3000)  # IMPORTANT: limit for free tier
     return movies
 
 
@@ -26,8 +27,7 @@ def load_movies():
 def compute_similarity(movies):
     cv = CountVectorizer(max_features=5000, stop_words="english")
     vectors = cv.fit_transform(movies["tags"]).toarray()
-    similarity = cosine_similarity(vectors)
-    return similarity
+    return cosine_similarity(vectors)
 
 
 @st.cache_data
@@ -43,14 +43,22 @@ def fetch_poster(movie_id):
         return None
 
 
-def recommend(movie_title, n=10):
-    idx = movies[movies["title"] == movie_title].index[0]
+# ---------------- RECOMMENDATION LOGIC ----------------
+similarity = None  # LAZY LOAD
 
+def recommend(movie_title, n=5):
+    global similarity
+
+    # compute similarity only once (on button click)
+    if similarity is None:
+        similarity = compute_similarity(movies)
+
+    idx = movies[movies["title"] == movie_title].index[0]
     scores = list(enumerate(similarity[idx]))
+
     top_movies = sorted(scores, key=lambda x: x[1], reverse=True)[1:n+1]
 
     names, posters = [], []
-
     for i, _ in top_movies:
         names.append(movies.iloc[i].title)
         posters.append(fetch_poster(movies.iloc[i].movie_id))
@@ -58,9 +66,8 @@ def recommend(movie_title, n=10):
     return names, posters
 
 
-# ---------------- APP ----------------
+# ---------------- APP UI ----------------
 movies = load_movies()
-similarity = compute_similarity(movies)
 
 st.title("🎬 Movie Recommendation System")
 st.markdown("Get **10 similar movies** based on your selection 🍿")
