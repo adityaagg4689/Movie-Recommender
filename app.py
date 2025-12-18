@@ -19,72 +19,68 @@ POSTER_BASE_URL = "https://image.tmdb.org/t/p/w500/"
 @st.cache_data
 def load_movies():
     movies = pd.DataFrame(pickle.load(open("movies_dic.pkl", "rb")))
-    movies = movies.head(3000)  # IMPORTANT: limit for free tier
+    movies = movies.head(1500)  # 🔥 VERY IMPORTANT
     return movies
 
 
 @st.cache_data
-def compute_similarity(movies):
-    cv = CountVectorizer(max_features=5000, stop_words="english")
-    vectors = cv.fit_transform(movies["tags"]).toarray()
-    return cosine_similarity(vectors)
+def build_vectorizer(tags):
+    cv = CountVectorizer(max_features=3000, stop_words="english")
+    vectors = cv.fit_transform(tags)   # KEEP SPARSE
+    return cv, vectors
 
 
 @st.cache_data
 def fetch_poster(movie_id):
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}"
-    params = {"api_key": TMDB_API_KEY, "language": "en-US"}
-
     try:
-        res = requests.get(url, params=params, timeout=5).json()
+        res = requests.get(
+            f"https://api.themoviedb.org/3/movie/{movie_id}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5
+        ).json()
         poster = res.get("poster_path")
         return POSTER_BASE_URL + poster if poster else None
     except:
         return None
 
 
-# ---------------- RECOMMENDATION LOGIC ----------------
-similarity = None  # LAZY LOAD
-
+# ---------------- RECOMMEND LOGIC ----------------
 def recommend(movie_title, n=5):
-    global similarity
-
-    # compute similarity only once (on button click)
-    if similarity is None:
-        similarity = compute_similarity(movies)
-
     idx = movies[movies["title"] == movie_title].index[0]
-    scores = list(enumerate(similarity[idx]))
 
-    top_movies = sorted(scores, key=lambda x: x[1], reverse=True)[1:n+1]
+    # compute similarity ONLY for selected movie
+    sim_scores = cosine_similarity(vectors[idx], vectors).flatten()
+
+    top_indices = sim_scores.argsort()[::-1][1:n+1]
 
     names, posters = [], []
-    for i, _ in top_movies:
+    for i in top_indices:
         names.append(movies.iloc[i].title)
         posters.append(fetch_poster(movies.iloc[i].movie_id))
 
     return names, posters
 
 
-# ---------------- APP UI ----------------
+# ---------------- APP ----------------
 movies = load_movies()
+cv, vectors = build_vectorizer(movies["tags"])
 
 st.title("🎬 Movie Recommendation System")
-st.markdown("Get **10 similar movies** based on your selection 🍿")
+st.markdown("Get **5 similar movies** based on your selection 🍿")
 
 selected_movie = st.selectbox("Choose a movie", movies["title"])
 
 if st.button("✨ Recommend"):
-    names, posters = recommend(selected_movie)
+    names, posters = recommend(selected_movie, n=5)
 
     cols = st.columns(5)
-    for i in range(len(names)):
-        with cols[i % 5]:
-            if posters[i]:
-                st.image(posters[i], use_container_width=True)
+    for col, name, poster in zip(cols, names, posters):
+        with col:
+            if poster:
+                st.image(poster, use_container_width=True)
             else:
-                st.write("No Image Available")
+                st.write("No Image")
             st.markdown(
-                f"<p style='text-align:center; font-weight:600'>{names[i]}</p>",
+                f"<p style='text-align:center; font-weight:600'>{name}</p>",
                 unsafe_allow_html=True
             )
