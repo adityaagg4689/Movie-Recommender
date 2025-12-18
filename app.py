@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import pickle
 import requests
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ---------------- CONFIG ----------------
 st.set_page_config(
@@ -15,10 +17,17 @@ POSTER_BASE_URL = "https://image.tmdb.org/t/p/w500/"
 
 # ---------------- LOAD DATA ----------------
 @st.cache_data
-def load_data():
+def load_movies():
     movies = pd.DataFrame(pickle.load(open("movies_dic.pkl", "rb")))
-    similarity = pickle.load(open("sim.pkl", "rb"))
-    return movies, similarity
+    return movies
+
+
+@st.cache_data
+def compute_similarity(movies):
+    cv = CountVectorizer(max_features=5000, stop_words="english")
+    vectors = cv.fit_transform(movies["tags"]).toarray()
+    similarity = cosine_similarity(vectors)
+    return similarity
 
 
 @st.cache_data
@@ -35,8 +44,8 @@ def fetch_poster(movie_id):
 
 
 def recommend(movie_title, n=10):
-    # get index of selected movie
-    idx = movies.index[movies["title"] == movie_title][0]
+    idx = movies[movies["title"] == movie_title].index[0]
+
     scores = list(enumerate(similarity[idx]))
     top_movies = sorted(scores, key=lambda x: x[1], reverse=True)[1:n+1]
 
@@ -50,7 +59,8 @@ def recommend(movie_title, n=10):
 
 
 # ---------------- APP ----------------
-movies, similarity = load_data()
+movies = load_movies()
+similarity = compute_similarity(movies)
 
 st.title("🎬 Movie Recommendation System")
 st.markdown("Get **10 similar movies** based on your selection 🍿")
